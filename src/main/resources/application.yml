@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: fintech-aggregator
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+server:
+  port: 8080
+
+providers:
+  coingecko:
+    base-url: https://api.coingecko.com/api/v3
+    fallback-enabled: true
+  mock:
+    mode: RANDOM   # Options: FAIL, SLOW, BAD_DATA, RANDOM
+
+logging:
+  level:
+    com.kartikay.fintech: DEBUG
