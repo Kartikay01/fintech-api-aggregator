@@ -6,6 +6,7 @@ import com.aggregator.fintech.provider.PriceProvider;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -14,9 +15,9 @@ public class AggregatorService {
 
     private final List<PriceProvider> providers;
 
-    // Spring auto-injects all PriceProvider beans in declaration order.
-    // Day 2: we'll wire priority lists per type.
-    // Day 1: just use the first provider that supports the requested type.
+    // Spring injects providers sorted by @Order value.
+    // Priority: CoinGecko(1) → AlphaVantage(1) → MockProvider(99)
+    // Within same @Order value, type filtering ensures the right one is called.
     public AggregatorService(List<PriceProvider> providers) {
         this.providers = providers;
         log.info("[Aggregator] Initialized with {} provider(s): {}",
@@ -25,38 +26,89 @@ public class AggregatorService {
     }
 
     public PriceResponse getPrice(PriceRequest request) {
-        log.info("[Aggregator] Received request: symbol={}, type={}", request.getSymbol(), request.getType());
+        log.info("[Aggregator] Request received: symbol={}, type={}",
+                request.getSymbol(), request.getType());
 
-        PriceProvider provider = providers.stream()
+        // Filter to providers that support the requested asset type,
+        // preserving @Order priority.
+        List<PriceProvider> eligible = providers.stream()
                 .filter(p -> p.supports(request.getType()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No provider available for type: " + request.getType()));
+                .toList();
 
-        log.debug("[Aggregator] Delegating to provider: {}", provider.getName());
+        if (eligible.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No provider available for type: " + request.getType());
+        }
 
-        // Day 1: no fallback, no cache, no rate limiter — raw provider call.
-        // This will be layered in Day 2 and 3.
-        PriceResponse response = provider.getPrice(request);
+        List<String> attemptedProviders = new ArrayList<>();
+        boolean fallbackUsed = false;
 
-        validateResponse(response, provider.getName());
+        for (PriceProvider provider : eligible) {
+            attemptedProviders.add(provider.getName());
+            log.debug("[Aggregator] Trying provider: {} (attempt {}/{})",
+                    provider.getName(), attemptedProviders.size(), eligible.size());
 
-        log.info("[Aggregator] Response: symbol={}, price={}, source={}",
-                response.getSymbol(), response.getPrice(), response.getSource());
+            try {
+                PriceResponse response = provider.getPrice(request);
 
-        return response;
+                // Validate before accepting — bad data triggers fallback too
+                validateResponse(response, provider.getName());
+
+                // If we got past the first provider, flag that fallback was used
+                if (attemptedProviders.size() > 1) {
+                    fallbackUsed = true;
+                    log.warn("[Aggregator] Fallback triggered. Failed providers: {}. Succeeded with: {}",
+                            attemptedProviders.subList(0, attemptedProviders.size() - 1),
+                            provider.getName());
+                }
+
+                // Stamp the final fallbackUsed flag on the response
+                PriceResponse finalResponse = PriceResponse.builder()
+                        .symbol(response.getSymbol())
+                        .price(response.getPrice())
+                        .currency(response.getCurrency())
+                        .type(response.getType())
+                        .source(response.getSource())
+                        .fallbackUsed(fallbackUsed || response.isFallbackUsed())
+                        .cachedResponse(response.isCachedResponse())
+                        .timestamp(response.getTimestamp())
+                        .build();
+
+                log.info("[Aggregator] Success: symbol={}, price={}, source={}, fallbackUsed={}",
+                        finalResponse.getSymbol(),
+                        finalResponse.getPrice(),
+                        finalResponse.getSource(),
+                        finalResponse.isFallbackUsed());
+
+                return finalResponse;
+
+            } catch (Exception e) {
+                log.warn("[Aggregator] Provider {} failed: {}. Moving to next provider.",
+                        provider.getName(), e.getMessage());
+                // Continue to the next provider in the loop
+            }
+        }
+
+        // All providers exhausted
+        throw new RuntimeException(
+                "All providers failed for symbol=" + request.getSymbol()
+                + ", type=" + request.getType()
+                + ". Attempted: " + attemptedProviders);
     }
 
     /**
      * Validates that the response contains usable data.
-     * On Day 2, a failed validation will trigger fallback to the next provider.
+     * A null or non-positive price is treated as a provider failure,
+     * which triggers fallback to the next provider in the chain.
      */
     private void validateResponse(PriceResponse response, String providerName) {
         if (response == null) {
-            throw new RuntimeException("[Aggregator] Provider " + providerName + " returned null response");
+            throw new RuntimeException(
+                    "Provider " + providerName + " returned null response");
         }
         if (response.getPrice() == null || response.getPrice() <= 0) {
-            throw new RuntimeException("[Aggregator] Provider " + providerName
+            throw new RuntimeException(
+                    "Provider " + providerName
                     + " returned invalid price: " + response.getPrice());
         }
     }

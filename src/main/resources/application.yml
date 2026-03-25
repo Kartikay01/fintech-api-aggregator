@@ -13,9 +13,13 @@ providers:
   coingecko:
     base-url: https://api.coingecko.com/api/v3
     fallback-enabled: true
+  alphavantage:
+    base-url: https://www.alphavantage.co/query
+    api-key: TITB8R16MPI2HZBM   # <-- paste your key here
+    fallback-enabled: true
   mock:
-    mode: RANDOM   # Options: FAIL, SLOW, BAD_DATA, RANDOM
+    mode: BAD_DATA   # Options: FAIL, SLOW, BAD_DATA, RANDOM
 
 logging:
   level:
-    com.kartikay.fintech: DEBUG
+    com.aggregator.fintech: DEBUG
