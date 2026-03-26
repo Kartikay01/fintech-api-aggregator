@@ -15,10 +15,14 @@ providers:
     fallback-enabled: true
   alphavantage:
     base-url: https://www.alphavantage.co/query
-    api-key: TITB8R16MPI2HZBM   # <-- paste your key here
+    api-key: TITB8R16MPI2HZBM
     fallback-enabled: true
   mock:
-    mode: BAD_DATA   # Options: FAIL, SLOW, BAD_DATA, RANDOM
+    mode: RANDOM   # Options: FAIL, SLOW, BAD_DATA, RANDOM
+
+cache:
+  ttl-seconds: 10          # How long a price stays cached
+  key-prefix: "price"      # Redis key format: price:{type}:{symbol}
 
 logging:
   level:
