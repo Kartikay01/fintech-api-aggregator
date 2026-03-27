@@ -12,13 +12,13 @@ server:
 providers:
   coingecko:
     base-url: https://api.coingecko.com/api/v3
-    fallback-enabled: true
+    fallback-enabled: false
   alphavantage:
     base-url: https://www.alphavantage.co/query
     api-key: TITB8R16MPI2HZBM
     fallback-enabled: true
   mock:
-    mode: FAIL   # Options: FAIL, SLOW, BAD_DATA, RANDOM
+    mode: RANDOM   # Options: FAIL, SLOW, BAD_DATA, RANDOM
 
 cache:
   ttl-seconds: 10          # How long a price stays cached
@@ -27,6 +27,16 @@ cache:
 circuit-breaker:
   failure-threshold: 3          # consecutive failures before OPEN
   recovery-timeout-seconds: 10  # seconds in OPEN before trying HALF_OPEN
+
+async:
+  provider-pool:
+    core-size: 5
+    max-size: 10
+    queue-capacity: 50
+    timeout-seconds: 5        # Max wait for all provider futures
+ 
+deduplication:
+  ttl-seconds: 2              # Dedup window — absorbs request bursts
 
 logging:
   level:
