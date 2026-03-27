@@ -49,7 +49,7 @@ public class AlphaVantageProvider implements PriceProvider {
     public PriceResponse getPrice(PriceRequest request) {
         String symbol = request.getSymbol().toUpperCase();
 
-        try {
+        // try {
             // GLOBAL_QUOTE returns the latest price for a stock symbol
             String url = baseUrl
                     + "?function=GLOBAL_QUOTE"
@@ -98,27 +98,27 @@ public class AlphaVantageProvider implements PriceProvider {
                     .timestamp(Instant.now())
                     .build();
 
-        } catch (Exception e) {
-            log.warn("[AlphaVantage] Real API call failed for {}: {}. Trying hardcoded fallback.",
-                    symbol, e.getMessage());
+        // } catch (Exception e) {
+        //     log.warn("[AlphaVantage] Real API call failed for {}: {}. Trying hardcoded fallback.",
+        //             symbol, e.getMessage());
 
-            if (fallbackEnabled && FALLBACK_PRICES.containsKey(symbol)) {
-                log.info("[AlphaVantage] Serving hardcoded fallback price for {}", symbol);
-                return PriceResponse.builder()
-                        .symbol(symbol)
-                        .price(FALLBACK_PRICES.get(symbol))
-                        .currency("USD")
-                        .type("stock")
-                        .source(NAME + " (hardcoded-fallback)")
-                        .fallbackUsed(true)
-                        .cachedResponse(false)
-                        .timestamp(Instant.now())
-                        .build();
-            }
+        //     if (fallbackEnabled && FALLBACK_PRICES.containsKey(symbol)) {
+        //         log.info("[AlphaVantage] Serving hardcoded fallback price for {}", symbol);
+        //         return PriceResponse.builder()
+        //                 .symbol(symbol)
+        //                 .price(FALLBACK_PRICES.get(symbol))
+        //                 .currency("USD")
+        //                 .type("stock")
+        //                 .source(NAME + " (hardcoded-fallback)")
+        //                 .fallbackUsed(true)
+        //                 .cachedResponse(false)
+        //                 .timestamp(Instant.now())
+        //                 .build();
+        //     }
 
-            throw new RuntimeException(
-                    "[AlphaVantage] Failed to fetch price for " + symbol + ": " + e.getMessage(), e);
-        }
+        //     throw new RuntimeException(
+        //             "[AlphaVantage] Failed to fetch price for " + symbol + ": " + e.getMessage(), e);
+        // }
     }
 
     @Override

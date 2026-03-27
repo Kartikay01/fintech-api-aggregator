@@ -1,6 +1,8 @@
 package com.aggregator.fintech.aggregator;
 
 import com.aggregator.fintech.cache.CacheService;
+import com.aggregator.fintech.circuitbreaker.CircuitBreakerRegistry;
+import com.aggregator.fintech.circuitbreaker.CircuitBreakerState;
 import com.aggregator.fintech.model.PriceRequest;
 import com.aggregator.fintech.model.PriceResponse;
 import com.aggregator.fintech.provider.PriceProvider;
@@ -16,10 +18,14 @@ public class AggregatorService {
 
     private final List<PriceProvider> providers;
     private final CacheService cacheService;
+    private final CircuitBreakerRegistry circuitBreakerRegistry;
 
-    public AggregatorService(List<PriceProvider> providers, CacheService cacheService) {
+    public AggregatorService(List<PriceProvider> providers,
+                             CacheService cacheService,
+                             CircuitBreakerRegistry circuitBreakerRegistry) {
         this.providers = providers;
         this.cacheService = cacheService;
+        this.circuitBreakerRegistry = circuitBreakerRegistry;
         log.info("[Aggregator] Initialized with {} provider(s): {}",
                 providers.size(),
                 providers.stream().map(PriceProvider::getName).toList());
@@ -28,13 +34,12 @@ public class AggregatorService {
     public PriceResponse getPrice(PriceRequest request) {
         log.info("[Aggregator] Request received: symbol={}, type={}",
                 request.getSymbol(), request.getType());
-
+        log.debug("[DEBUG] CircuitBreakerRegistry instance: {}", System.identityHashCode(circuitBreakerRegistry));
+        // 1. Cache check — before touching any provider or circuit breaker
         String cacheKey = cacheService.buildKey(request.getType(), request.getSymbol());
-
-        // 1. Cache check — before touching any provider
         PriceResponse cached = cacheService.get(cacheKey);
         if (cached != null) {
-            log.info("[Aggregator] Cache HIT for key: {} returning cached price={}", cacheKey, cached.getPrice());
+            log.info("[Aggregator] Cache HIT for key: {}", cacheKey);
             return PriceResponse.builder()
                     .symbol(cached.getSymbol())
                     .price(cached.getPrice())
@@ -57,22 +62,37 @@ public class AggregatorService {
                     "No provider available for type: " + request.getType());
         }
 
-        // 3. Fallback loop — try each provider in priority order
+        // 3. Fallback loop with circuit breaker guard on each provider
         List<String> attemptedProviders = new ArrayList<>();
+        List<String> skippedByBreaker = new ArrayList<>();
         boolean fallbackUsed = false;
 
         for (PriceProvider provider : eligible) {
+            CircuitBreakerState breaker = circuitBreakerRegistry.get(provider.getName());
+
+            // Circuit breaker check — OPEN breakers are skipped entirely
+            if (!breaker.allowRequest()) {
+                log.warn("[Aggregator] Circuit breaker OPEN for provider: {} — skipping",
+                        provider.getName());
+                skippedByBreaker.add(provider.getName());
+                continue;
+            }
+
             attemptedProviders.add(provider.getName());
-            log.debug("[Aggregator] Trying provider: {} (attempt {}/{})",
-                    provider.getName(), attemptedProviders.size(), eligible.size());
+            log.debug("[Aggregator] Trying provider: {}", provider.getName());
 
             try {
                 PriceResponse response = provider.getPrice(request);
                 validateResponse(response, provider.getName());
 
-                if (attemptedProviders.size() > 1) {
+                // Success — close the breaker if it was in HALF_OPEN
+                breaker.recordSuccess();
+
+                if (!attemptedProviders.isEmpty() && attemptedProviders.size() > 1
+                        || !skippedByBreaker.isEmpty()) {
                     fallbackUsed = true;
-                    log.warn("[Aggregator] Fallback triggered. Failed: {} Succeeded: {}",
+                    log.warn("[Aggregator] Fallback used. Skipped by breaker: {}. Failed: {}. Succeeded: {}",
+                            skippedByBreaker,
                             attemptedProviders.subList(0, attemptedProviders.size() - 1),
                             provider.getName());
                 }
@@ -88,27 +108,28 @@ public class AggregatorService {
                         .timestamp(response.getTimestamp())
                         .build();
 
-                // 4. Write to cache — only if response is not degraded
+                // Write to cache — only for clean (non-degraded) responses
                 cacheService.set(cacheKey, finalResponse);
 
                 log.info("[Aggregator] Success: symbol={}, price={}, source={}, fallbackUsed={}",
-                        finalResponse.getSymbol(),
-                        finalResponse.getPrice(),
-                        finalResponse.getSource(),
-                        finalResponse.isFallbackUsed());
+                        finalResponse.getSymbol(), finalResponse.getPrice(),
+                        finalResponse.getSource(), finalResponse.isFallbackUsed());
 
                 return finalResponse;
 
             } catch (Exception e) {
-                log.warn("[Aggregator] Provider {} failed: {}. Moving to next provider.",
-                        provider.getName(), e.getMessage());
+                // Failure — record against the breaker; may trip it to OPEN
+                breaker.recordFailure();
+                log.warn("[Aggregator] Provider {} failed: {}. Breaker state now: {}.",
+                        provider.getName(), e.getMessage(), breaker.getState());
             }
         }
 
         throw new RuntimeException(
-                "All providers failed for symbol=" + request.getSymbol()
+                "All providers failed or blocked for symbol=" + request.getSymbol()
                 + ", type=" + request.getType()
-                + ". Attempted: " + attemptedProviders);
+                + ". Attempted: " + attemptedProviders
+                + ", Skipped by breaker: " + skippedByBreaker);
     }
 
     private void validateResponse(PriceResponse response, String providerName) {

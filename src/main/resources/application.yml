@@ -18,11 +18,15 @@ providers:
     api-key: TITB8R16MPI2HZBM
     fallback-enabled: true
   mock:
-    mode: RANDOM   # Options: FAIL, SLOW, BAD_DATA, RANDOM
+    mode: FAIL   # Options: FAIL, SLOW, BAD_DATA, RANDOM
 
 cache:
   ttl-seconds: 10          # How long a price stays cached
   key-prefix: "price"      # Redis key format: price:{type}:{symbol}
+
+circuit-breaker:
+  failure-threshold: 3          # consecutive failures before OPEN
+  recovery-timeout-seconds: 10  # seconds in OPEN before trying HALF_OPEN
 
 logging:
   level:

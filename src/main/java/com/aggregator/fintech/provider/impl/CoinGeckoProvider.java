@@ -58,7 +58,7 @@ public class CoinGeckoProvider implements PriceProvider {
             throw new IllegalArgumentException("Unsupported crypto symbol: " + symbol);
         }
 
-        try {
+        // try {
             String url = baseUrl + "/simple/price?ids=" + coinId + "&vs_currencies=usd";
             log.debug("[CoinGecko] Calling URL: {}", url);
 
@@ -84,26 +84,26 @@ public class CoinGeckoProvider implements PriceProvider {
                     .timestamp(Instant.now())
                     .build();
 
-        } catch (Exception e) {
-            log.warn("[CoinGecko] Real API call failed for {}: {}. Trying hardcoded fallback.", symbol, e.getMessage());
+        // } catch (Exception e) {
+        //     log.warn("[CoinGecko] Real API call failed for {}: {}. Trying hardcoded fallback.", symbol, e.getMessage());
 
-            if (fallbackEnabled && FALLBACK_PRICES.containsKey(symbol)) {
-                log.info("[CoinGecko] Serving hardcoded fallback price for {}", symbol);
-                return PriceResponse.builder()
-                        .symbol(symbol)
-                        .price(FALLBACK_PRICES.get(symbol))
-                        .currency("USD")
-                        .type("crypto")
-                        .source(NAME + " (hardcoded-fallback)")
-                        .fallbackUsed(true)
-                        .cachedResponse(false)
-                        .timestamp(Instant.now())
-                        .build();
-            }
+        //     if (fallbackEnabled && FALLBACK_PRICES.containsKey(symbol)) {
+        //         log.info("[CoinGecko] Serving hardcoded fallback price for {}", symbol);
+        //         return PriceResponse.builder()
+        //                 .symbol(symbol)
+        //                 .price(FALLBACK_PRICES.get(symbol))
+        //                 .currency("USD")
+        //                 .type("crypto")
+        //                 .source(NAME + " (hardcoded-fallback)")
+        //                 .fallbackUsed(true)
+        //                 .cachedResponse(false)
+        //                 .timestamp(Instant.now())
+        //                 .build();
+        //     }
 
-            // No fallback available — let AggregatorService handle it
-            throw new RuntimeException("[CoinGecko] Failed to fetch price for " + symbol + ": " + e.getMessage(), e);
-        }
+        //     // No fallback available — let AggregatorService handle it
+        //     throw new RuntimeException("[CoinGecko] Failed to fetch price for " + symbol + ": " + e.getMessage(), e);
+        // }
     }
 
     @Override
